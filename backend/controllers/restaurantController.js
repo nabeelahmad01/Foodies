@@ -1,4 +1,4 @@
-// backend/controllers/restaurantController.js
+// backend/controllers/restaurantController.js (COMPLETE VERSION)
 const Restaurant = require('../models/Restaurant');
 const MenuItem = require('../models/MenuItem');
 const Order = require('../models/Order');
@@ -8,8 +8,8 @@ const Order = require('../models/Order');
 // @access  Public
 exports.getRestaurants = async (req, res) => {
   try {
-    const { cuisineType, minRating } = req.query;
-
+    const { cuisineType, minRating, lat, lng, maxDistance } = req.query;
+    
     let query = { isActive: true };
 
     if (cuisineType) {
@@ -20,9 +20,31 @@ exports.getRestaurants = async (req, res) => {
       query.rating = { $gte: parseFloat(minRating) };
     }
 
-    const restaurants = await Restaurant.find(query)
-      .populate('ownerId', 'name')
-      .sort({ rating: -1 });
+    let restaurants;
+
+    // Location-based search
+    if (lat && lng) {
+      restaurants = await Restaurant.find(query)
+        .populate('ownerId', 'name')
+        .sort({ rating: -1 });
+
+      // Filter by distance if needed
+      if (maxDistance) {
+        restaurants = restaurants.filter(restaurant => {
+          const distance = calculateDistance(
+            parseFloat(lat),
+            parseFloat(lng),
+            restaurant.location.coordinates[1],
+            restaurant.location.coordinates[0]
+          );
+          return distance <= parseFloat(maxDistance);
+        });
+      }
+    } else {
+      restaurants = await Restaurant.find(query)
+        .populate('ownerId', 'name')
+        .sort({ rating: -1 });
+    }
 
     res.json({
       status: 'success',
@@ -30,12 +52,30 @@ exports.getRestaurants = async (req, res) => {
       restaurants,
     });
   } catch (error) {
+    console.error('Get restaurants error:', error);
     res.status(500).json({
       status: 'error',
       message: 'Failed to fetch restaurants',
     });
   }
 };
+
+// Calculate distance between two points (Haversine formula)
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth's radius in km
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function toRad(deg) {
+  return deg * (Math.PI / 180);
+}
 
 // @desc    Search restaurants
 // @route   GET /api/restaurants/search
@@ -44,20 +84,50 @@ exports.searchRestaurants = async (req, res) => {
   try {
     const { q } = req.query;
 
+    if (!q || q.trim() === '') {
+      return res.json({
+        status: 'success',
+        restaurants: [],
+      });
+    }
+
     const restaurants = await Restaurant.find({
       $or: [
         { name: { $regex: q, $options: 'i' } },
-        { cuisineType: { $regex: q, $options: 'i' } },
+        { cuisineType: { $in: [new RegExp(q, 'i')] } },
         { description: { $regex: q, $options: 'i' } },
       ],
       isActive: true,
-    }).limit(10);
+    })
+      .limit(10)
+      .populate('ownerId', 'name');
+
+    // Also search in menu items
+    const menuItems = await MenuItem.find({
+      name: { $regex: q, $options: 'i' },
+      isAvailable: true,
+    })
+      .populate('restaurantId')
+      .limit(10);
+
+    const restaurantsFromMenu = menuItems
+      .map(item => item.restaurantId)
+      .filter(r => r && r.isActive);
+
+    // Combine and deduplicate
+    const allRestaurants = [...restaurants];
+    restaurantsFromMenu.forEach(r => {
+      if (!allRestaurants.find(existing => existing._id.toString() === r._id.toString())) {
+        allRestaurants.push(r);
+      }
+    });
 
     res.json({
       status: 'success',
-      restaurants,
+      restaurants: allRestaurants,
     });
   } catch (error) {
+    console.error('Search error:', error);
     res.status(500).json({
       status: 'error',
       message: 'Search failed',
@@ -72,7 +142,7 @@ exports.getRestaurantById = async (req, res) => {
   try {
     const restaurant = await Restaurant.findById(req.params.id).populate(
       'ownerId',
-      'name phone',
+      'name phone email'
     );
 
     if (!restaurant) {
@@ -85,7 +155,7 @@ exports.getRestaurantById = async (req, res) => {
     const menuItems = await MenuItem.find({
       restaurantId: req.params.id,
       isAvailable: true,
-    });
+    }).sort({ category: 1, name: 1 });
 
     res.json({
       status: 'success',
@@ -95,6 +165,7 @@ exports.getRestaurantById = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error('Get restaurant error:', error);
     res.status(500).json({
       status: 'error',
       message: 'Failed to fetch restaurant',
@@ -108,7 +179,7 @@ exports.getRestaurantById = async (req, res) => {
 exports.getRestaurantMenu = async (req, res) => {
   try {
     const { category } = req.query;
-
+    
     let query = {
       restaurantId: req.params.id,
       isAvailable: true,
@@ -126,6 +197,7 @@ exports.getRestaurantMenu = async (req, res) => {
       menuItems,
     });
   } catch (error) {
+    console.error('Get menu error:', error);
     res.status(500).json({
       status: 'error',
       message: 'Failed to fetch menu',
@@ -138,6 +210,15 @@ exports.getRestaurantMenu = async (req, res) => {
 // @access  Private (Restaurant owner)
 exports.createRestaurant = async (req, res) => {
   try {
+    const existingRestaurant = await Restaurant.findOne({ ownerId: req.user.id });
+    
+    if (existingRestaurant) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'You already have a restaurant. Update it instead.',
+      });
+    }
+
     const restaurantData = {
       ...req.body,
       ownerId: req.user.id,
@@ -153,7 +234,7 @@ exports.createRestaurant = async (req, res) => {
     console.error('Create restaurant error:', error);
     res.status(500).json({
       status: 'error',
-      message: 'Failed to create restaurant',
+      message: error.message || 'Failed to create restaurant',
     });
   }
 };
@@ -172,24 +253,28 @@ exports.updateRestaurant = async (req, res) => {
       });
     }
 
-    // Check ownership
     if (restaurant.ownerId.toString() !== req.user.id) {
       return res.status(403).json({
         status: 'error',
-        message: 'Not authorized',
+        message: 'Not authorized to update this restaurant',
       });
     }
 
-    restaurant = await Restaurant.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
-    });
+    restaurant = await Restaurant.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
 
     res.json({
       status: 'success',
       restaurant,
     });
   } catch (error) {
+    console.error('Update restaurant error:', error);
     res.status(500).json({
       status: 'error',
       message: 'Failed to update restaurant',
@@ -218,13 +303,17 @@ exports.deleteRestaurant = async (req, res) => {
       });
     }
 
-    await restaurant.remove();
+    // Delete all menu items
+    await MenuItem.deleteMany({ restaurantId: req.params.id });
+
+    await restaurant.deleteOne();
 
     res.json({
       status: 'success',
       message: 'Restaurant deleted successfully',
     });
   } catch (error) {
+    console.error('Delete restaurant error:', error);
     res.status(500).json({
       status: 'error',
       message: 'Failed to delete restaurant',
@@ -263,9 +352,10 @@ exports.addMenuItem = async (req, res) => {
       menuItem,
     });
   } catch (error) {
+    console.error('Add menu item error:', error);
     res.status(500).json({
       status: 'error',
-      message: 'Failed to add menu item',
+      message: error.message || 'Failed to add menu item',
     });
   }
 };
@@ -296,7 +386,7 @@ exports.updateMenuItem = async (req, res) => {
     const updatedItem = await MenuItem.findByIdAndUpdate(
       req.params.itemId,
       req.body,
-      { new: true, runValidators: true },
+      { new: true, runValidators: true }
     );
 
     res.json({
@@ -304,6 +394,7 @@ exports.updateMenuItem = async (req, res) => {
       menuItem: updatedItem,
     });
   } catch (error) {
+    console.error('Update menu item error:', error);
     res.status(500).json({
       status: 'error',
       message: 'Failed to update menu item',
@@ -334,13 +425,14 @@ exports.deleteMenuItem = async (req, res) => {
       });
     }
 
-    await menuItem.remove();
+    await menuItem.deleteOne();
 
     res.json({
       status: 'success',
       message: 'Menu item deleted successfully',
     });
   } catch (error) {
+    console.error('Delete menu item error:', error);
     res.status(500).json({
       status: 'error',
       message: 'Failed to delete menu item',
@@ -369,7 +461,6 @@ exports.getDashboard = async (req, res) => {
       });
     }
 
-    // Get today's orders
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
@@ -415,6 +506,7 @@ exports.getDashboard = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error('Get dashboard error:', error);
     res.status(500).json({
       status: 'error',
       message: 'Failed to fetch dashboard stats',
@@ -461,6 +553,7 @@ exports.getRestaurantOrders = async (req, res) => {
       orders,
     });
   } catch (error) {
+    console.error('Get orders error:', error);
     res.status(500).json({
       status: 'error',
       message: 'Failed to fetch orders',

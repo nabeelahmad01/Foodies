@@ -73,6 +73,10 @@ app.use('/api/restaurants', restaurantRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
+// Add these routes in backend/server.js
+app.use('/api/favorites', require('./routes/favorites'));
+app.use('/api/addresses', require('./routes/addresses'));
+app.use('/api/promo-codes', require('./routes/promoCodes'));
 
 // Health check route
 app.get('/api/health', (req, res) => {
