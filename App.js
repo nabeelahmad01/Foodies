@@ -10,12 +10,14 @@ const STRIPE_PUBLISHABLE_KEY = 'pk_test_YOUR_STRIPE_KEY_HERE';
 
 export default function App() {
   return (
-    <Provider store={store}>
+    <ThemeProvider>
+      <Provider store={store}>
       <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY}>
         <NavigationContainer>
           <AppNavigator />
         </NavigationContainer>
       </StripeProvider>
     </Provider>
+        </ThemeProvider>
   );
 }

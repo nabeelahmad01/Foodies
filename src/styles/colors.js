@@ -18,3 +18,24 @@ export default {
   border: '#E0E0E0',
   shadow: '#00000029',
 };
+// Update colors.js
+// src/styles/colors.js
+const lightColors = {
+  primary: '#FF6B35',
+  background: '#F5F5F5',
+  card: '#FFFFFF',
+  text: '#1A1A2E',
+  textSecondary: '#757575',
+  border: '#E0E0E0',
+};
+
+const darkColors = {
+  primary: '#FF6B35',
+  background: '#121212',
+  card: '#1E1E1E',
+  text: '#FFFFFF',
+  textSecondary: '#B0B0B0',
+  border: '#2C2C2C',
+};
+
+export const getColors = (isDark) => (isDark ? darkColors : lightColors);
