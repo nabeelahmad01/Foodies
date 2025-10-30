@@ -1,4 +1,8 @@
 {
   "name": "FoodieApp",
-  "displayName": "FoodieApp"
+  "displayName": "FoodieApp",
+  "android": {
+      "package": "com.yourcompany.foodieapp",
+      "googleServicesFile": "./google-services.json"
+    }
 }

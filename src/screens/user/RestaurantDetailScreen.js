@@ -14,6 +14,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { addToCart } from '../../redux/slices/cartSlice';
 import { fetchRestaurantById } from '../../redux/slices/restaurantSlice';
 import colors from '../../styles/colors';
+import Analytics from '../../services/analytics';
 
 const RestaurantDetailScreen = ({ route, navigation }) => {
   const { restaurant } = route.params;
@@ -26,9 +27,19 @@ const RestaurantDetailScreen = ({ route, navigation }) => {
   useEffect(() => {
     dispatch(fetchRestaurantById(restaurant._id));
   }, [dispatch, restaurant._id]);
+useEffect(() => {
+  // Track restaurant view
+  Analytics.logViewItem({
+    id: restaurant._id,
+    name: restaurant.name,
+    category: restaurant.cuisineType?.join(', '),
+  });
+}, [restaurant]);
 
   const handleAddToCart = item => {
     // Check if adding from different restaurant
+    Analytics.logAddToCart(item);
+    dispatch(addToCart({ item, restaurant }));
     if (restaurantId && restaurantId !== restaurant._id) {
       Alert.alert(
         'Replace cart items?',

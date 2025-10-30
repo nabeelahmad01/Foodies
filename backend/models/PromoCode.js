@@ -1,240 +1,169 @@
-// ============================================
-// FIREBASE PUSH NOTIFICATIONS SETUP
-// ============================================
+// backend/models/PromoCode.js
+const mongoose = require('mongoose');
 
-// 1. Install dependencies
-// npm install expo-notifications firebase
+const promoCodeSchema = new mongoose.Schema(
+  {
+    code: {
+      type: String,
+      required: true,
+      unique: true,
+      uppercase: true,
+      trim: true,
+    },
+    description: {
+      type: String,
+      required: true,
+    },
+    discountType: {
+      type: String,
+      enum: ['percentage', 'fixed'],
+      required: true,
+    },
+    discountValue: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    maxDiscount: {
+      type: Number,
+      default: null,
+    },
+    minOrderAmount: {
+      type: Number,
+      default: 0,
+    },
+    maxUsageCount: {
+      type: Number,
+      default: null,
+    },
+    usageCount: {
+      type: Number,
+      default: 0,
+    },
+    userUsageLimit: {
+      type: Number,
+      default: 1,
+    },
+    usedBy: [
+      {
+        userId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+        },
+        count: {
+          type: Number,
+          default: 0,
+        },
+        lastUsed: Date,
+      },
+    ],
+    validFrom: {
+      type: Date,
+      default: Date.now,
+    },
+    validUntil: {
+      type: Date,
+      required: true,
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    applicableFor: {
+      type: String,
+      enum: ['all', 'new_users', 'specific_users'],
+      default: 'all',
+    },
+    specificUsers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
+    restaurants: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Restaurant',
+      },
+    ],
+  },
+  {
+    timestamps: true,
+  },
+);
 
-// 2. src/services/pushNotifications.js
-import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
-import { Platform } from 'react-native';
-import api from './api';
+// Check if promo code is valid
+promoCodeSchema.methods.isValid = function (userId, orderAmount) {
+  const now = new Date();
 
-// Configure notifications
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+  if (!this.isActive) {
+    return { valid: false, message: 'Promo code is inactive' };
+  }
 
-// Register for push notifications
-export async function registerForPushNotifications() {
-  let token;
+  if (now < this.validFrom) {
+    return { valid: false, message: 'Promo code not yet valid' };
+  }
 
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('default', {
-      name: 'default',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#FF231F7C',
+  if (now > this.validUntil) {
+    return { valid: false, message: 'Promo code has expired' };
+  }
+
+  if (this.maxUsageCount && this.usageCount >= this.maxUsageCount) {
+    return { valid: false, message: 'Promo code usage limit reached' };
+  }
+
+  if (orderAmount < this.minOrderAmount) {
+    return {
+      valid: false,
+      message: `Minimum order amount is Rs. ${this.minOrderAmount}`,
+    };
+  }
+
+  const userUsage = this.usedBy.find(
+    u => u.userId.toString() === userId.toString(),
+  );
+  if (userUsage && userUsage.count >= this.userUsageLimit) {
+    return { valid: false, message: 'You have already used this promo code' };
+  }
+
+  return { valid: true };
+};
+
+// Calculate discount
+promoCodeSchema.methods.calculateDiscount = function (orderAmount) {
+  let discount = 0;
+
+  if (this.discountType === 'percentage') {
+    discount = (orderAmount * this.discountValue) / 100;
+    if (this.maxDiscount) {
+      discount = Math.min(discount, this.maxDiscount);
+    }
+  } else {
+    discount = this.discountValue;
+  }
+
+  return Math.round(discount);
+};
+
+// Mark as used
+promoCodeSchema.methods.markAsUsed = async function (userId) {
+  const userUsage = this.usedBy.find(
+    u => u.userId.toString() === userId.toString(),
+  );
+
+  if (userUsage) {
+    userUsage.count += 1;
+    userUsage.lastUsed = new Date();
+  } else {
+    this.usedBy.push({
+      userId,
+      count: 1,
+      lastUsed: new Date(),
     });
   }
 
-  if (Device.isDevice) {
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-
-    if (finalStatus !== 'granted') {
-      alert('Failed to get push token for push notification!');
-      return;
-    }
-
-    token = (await Notifications.getExpoPushTokenAsync()).data;
-    console.log('Push Token:', token);
-
-    // Save token to backend
-    try {
-      await api.post('/users/push-token', { pushToken: token });
-    } catch (error) {
-      console.error('Failed to save push token:', error);
-    }
-  } else {
-    alert('Must use physical device for Push Notifications');
-  }
-
-  return token;
-}
-
-// Listen to notifications
-export function setupNotificationListeners(navigation) {
-  // Handle notification when app is in foreground
-  const foregroundSubscription = Notifications.addNotificationReceivedListener(
-    (notification) => {
-      console.log('Notification received:', notification);
-    }
-  );
-
-  // Handle notification tap
-  const responseSubscription = Notifications.addNotificationResponseReceivedListener(
-    (response) => {
-      const data = response.notification.request.content.data;
-      
-      // Navigate based on notification type
-      if (data.type === 'order') {
-        navigation.navigate('OrderTracking', { orderId: data.orderId });
-      } else if (data.type === 'restaurant_order') {
-        navigation.navigate('RestaurantOrders', { restaurantId: data.restaurantId });
-      } else if (data.type === 'delivery') {
-        navigation.navigate('DeliveryScreen', { orderId: data.orderId });
-      }
-    }
-  );
-
-  return () => {
-    foregroundSubscription.remove();
-    responseSubscription.remove();
-  };
-}
-
-// Send local notification (for testing)
-export async function sendLocalNotification(title, body, data = {}) {
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title,
-      body,
-      data,
-      sound: true,
-    },
-    trigger: null, // Send immediately
-  });
-}
-
-// ============================================
-// BACKEND - Send Push Notifications
-// ============================================
-
-// backend/utils/pushNotifications.js
-const { Expo } = require('expo-server-sdk');
-const User = require('../models/User');
-
-const expo = new Expo();
-
-// Add pushToken field to User model
-// pushToken: { type: String, default: null }
-
-async function sendPushNotification(userId, title, body, data = {}) {
-  try {
-    const user = await User.findById(userId);
-    
-    if (!user || !user.pushToken) {
-      console.log('No push token for user:', userId);
-      return;
-    }
-
-    if (!Expo.isExpoPushToken(user.pushToken)) {
-      console.error('Invalid Expo push token:', user.pushToken);
-      return;
-    }
-
-    const message = {
-      to: user.pushToken,
-      sound: 'default',
-      title,
-      body,
-      data,
-      priority: 'high',
-      badge: 1,
-    };
-
-    const ticket = await expo.sendPushNotificationsAsync([message]);
-    console.log('Push notification sent:', ticket);
-    
-    return ticket;
-  } catch (error) {
-    console.error('Error sending push notification:', error);
-  }
-}
-
-// Send to multiple users
-async function sendBulkPushNotifications(userIds, title, body, data = {}) {
-  try {
-    const users = await User.find({ _id: { $in: userIds }, pushToken: { $ne: null } });
-    
-    const messages = users
-      .filter(user => Expo.isExpoPushToken(user.pushToken))
-      .map(user => ({
-        to: user.pushToken,
-        sound: 'default',
-        title,
-        body,
-        data,
-      }));
-
-    const chunks = expo.chunkPushNotifications(messages);
-    const tickets = [];
-
-    for (const chunk of chunks) {
-      const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
-      tickets.push(...ticketChunk);
-    }
-
-    console.log('Bulk notifications sent:', tickets.length);
-    return tickets;
-  } catch (error) {
-    console.error('Error sending bulk notifications:', error);
-  }
-}
-
-module.exports = {
-  sendPushNotification,
-  sendBulkPushNotifications,
+  this.usageCount += 1;
+  await this.save();
 };
 
-// ============================================
-// USAGE EXAMPLES
-// ============================================
-
-// In orderController.js - When order is placed
-const { sendPushNotification } = require('../utils/pushNotifications');
-
-exports.createOrder = async (req, res) => {
-  // ... create order logic
-  
-  // Send notification to restaurant
-  const restaurant = await Restaurant.findById(restaurantId).populate('ownerId');
-  await sendPushNotification(
-    restaurant.ownerId._id,
-    'New Order! 🎉',
-    `Order #${order._id.slice(-6)} received`,
-    { type: 'restaurant_order', orderId: order._id }
-  );
-  
-  // ... rest of code
-};
-
-// When order status changes
-await sendPushNotification(
-  order.userId,
-  'Order Update',
-  `Your order is now ${order.status}`,
-  { type: 'order', orderId: order._id }
-);
-
-// ============================================
-// IN APP.JS - Initialize notifications
-// ============================================
-
-import { registerForPushNotifications, setupNotificationListeners } from './src/services/pushNotifications';
-
-function App() {
-  const navigationRef = useRef();
-
-  useEffect(() => {
-    registerForPushNotifications();
-    
-    const cleanup = setupNotificationListeners(navigationRef.current);
-    return cleanup;
-  }, []);
-
-  return (
-    // ... rest of app
-  );
-}
+module.exports = mongoose.model('PromoCode', promoCodeSchema);

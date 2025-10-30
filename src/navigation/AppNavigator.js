@@ -12,6 +12,8 @@ import RestaurantDetailScreen from '../screens/user/RestaurantDetailScreen';
 import CheckoutScreen from '../screens/user/CheckoutScreen';
 import OrderTrackingScreen from '../screens/user/OrderTrackingScreen';
 import KYCUploadScreen from '../screens/auth/KYCUploadScreen';
+import ChatScreen from '../screens/chat/ChatScreen';
+import AddressManagementScreen from '../screens/user/AddressManagementScreen';
 
 const Stack = createStackNavigator();
 
@@ -42,6 +44,7 @@ const AppNavigator = () => {
           <Stack.Screen name="Checkout" component={CheckoutScreen} />
           <Stack.Screen name="OrderTracking" component={OrderTrackingScreen} />
           <Stack.Screen name="KYCUpload" component={KYCUploadScreen} />
+          <Stack.Screen name="ChatScreen" component={ChatScreen} />;
         </>
       )}
     </Stack.Navigator>

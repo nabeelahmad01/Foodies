@@ -17,6 +17,7 @@ import { clearCart } from '../../redux/slices/cartSlice';
 import api from '../../services/api';
 import colors from '../../styles/colors';
 import { PAYMENT_METHODS } from '../../utils/constants';
+import Analytics from '../../services/analytics';
 
 const CheckoutScreen = ({ navigation }) => {
   const dispatch = useDispatch();
@@ -129,12 +130,20 @@ const CheckoutScreen = ({ navigation }) => {
     }
   };
 
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
     if (paymentMethod === PAYMENT_METHODS.CARD) {
       handlePayWithCard();
     } else {
       handlePayWithWallet();
     }
+    // Track checkout
+    await Analytics.logBeginCheckout(totalAmount, cartItems);
+
+    // Place order
+    const order = await dispatch(createOrder(orderData)).unwrap();
+
+    // Track purchase
+    await Analytics.logPurchase(order._id, totalAmount, cartItems);
   };
 
   return (

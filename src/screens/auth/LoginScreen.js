@@ -35,6 +35,15 @@ const LoginScreen = ({ navigation }) => {
     } catch (error) {
       Alert.alert('Login Failed', error);
     }
+    await dispatch(login({ email, password })).unwrap();
+
+    // Track login
+    Analytics.logLogin('email');
+    Analytics.setUserId(user._id);
+    Analytics.setUserProperties({
+      user_role: user.role,
+      kyc_status: user.kycStatus,
+    });
   };
 
   return (

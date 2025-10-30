@@ -2,6 +2,8 @@
 const Order = require('../models/Order');
 const User = require('../models/User');
 const Restaurant = require('../models/Restaurant');
+// In orderController.js - When order is placed
+const { sendPushNotification } = require('../utils/pushNotifications');
 
 // @desc    Create new order
 // @route   POST /api/orders
@@ -66,8 +68,24 @@ exports.createOrder = async (req, res) => {
       message: 'Failed to create order',
     });
   }
+  // Send notification to restaurant
+  const restaurant = await Restaurant.findById(restaurantId).populate(
+    'ownerId',
+  );
+  await sendPushNotification(
+    restaurant.ownerId._id,
+    'New Order! 🎉',
+    `Order #${order._id.slice(-6)} received`,
+    { type: 'restaurant_order', orderId: order._id },
+  );
 };
-
+// When order status changes
+await sendPushNotification(
+  order.userId,
+  'Order Update',
+  `Your order is now ${order.status}`,
+  { type: 'order', orderId: order._id }
+);
 // @desc    Get user's orders
 // @route   GET /api/orders/my-orders
 // @access  Private

@@ -244,6 +244,20 @@ const OrderTrackingScreen = ({ route, navigation }) => {
               <TouchableOpacity style={styles.riderActionButton}>
                 <Icon name="chatbubble" size={20} color={colors.primary} />
               </TouchableOpacity>
+              // In OrderTrackingScreen.js, add this button:
+              <TouchableOpacity
+                style={styles.chatButton}
+                onPress={() =>
+                  navigation.navigate('ChatScreen', {
+                    orderId: order._id,
+                    receiverName: order.riderId?.name || 'Rider',
+                  })
+                }
+              >
+                <Icon name="chatbubbles" size={20} color={colors.white} />
+                <Text style={styles.chatButtonText}>Chat with Rider</Text>
+              </TouchableOpacity>
+              ;
             </View>
           </View>
         )}

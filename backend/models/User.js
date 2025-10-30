@@ -62,6 +62,16 @@ const userSchema = new mongoose.Schema(
         isDefault: { type: Boolean, default: false },
       },
     ],
+    favorites: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Restaurant',
+      },
+    ],
+    pushToken: {
+      type: String,
+      default: null,
+    },
     kycStatus: {
       type: String,
       enum: ['pending', 'approved', 'rejected'],
@@ -81,6 +91,7 @@ const userSchema = new mongoose.Schema(
     },
     lastLogin: Date,
   },
+
   {
     timestamps: true,
   },

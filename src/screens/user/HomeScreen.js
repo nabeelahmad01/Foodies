@@ -16,6 +16,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { fetchRestaurants } from '../../redux/slices/restaurantSlice';
 import { CATEGORIES } from '../../utils/constants';
 import colors from '../../styles/colors';
+import { t } from '../../utils/i18n';
 
 const HomeScreen = ({ navigation }) => {
   const dispatch = useDispatch();
@@ -82,6 +83,11 @@ const HomeScreen = ({ navigation }) => {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
+          <View>
+            <Text>{t('home.title')}</Text>
+            <TextInput placeholder={t('home.searchPlaceholder')} />
+            <Text>{t('home.popularRestaurants')}</Text>
+          </View>
           <View>
             <Text style={styles.brandName}>Foodie</Text>
             <View style={styles.locationContainer}>
